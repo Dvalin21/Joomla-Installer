@@ -1,2 +1,2 @@
 # Joomla-Installer
-Automated Joomla Inster script
+Automated Joomla Installer script
