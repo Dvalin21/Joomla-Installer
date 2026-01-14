@@ -1,5 +1,3 @@
-joomla.sh
-root@keithtechco:~# cat joomla.sh 
 #!/bin/bash
 # Joomla Install Script for LXC Container (HTTP only, behind reverse proxy)
 # Debian (latest) / Ubuntu 22.04+
