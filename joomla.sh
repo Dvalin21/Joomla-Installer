@@ -37,7 +37,7 @@ prompt_db_password() {
 }
 
 prompt_reverse_proxy_ip() {
-    read -p "Enter REVERSE PROXY IP (Zoraxy): " PROXY_IP
+    read -p "Enter REVERSE PROXY IP (ANY): " PROXY_IP
     [[ "$PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
         error_exit "Invalid IP address"
 }
@@ -53,7 +53,7 @@ install_packages() {
         apache2 mariadb-server mariadb-client \
         php php-cli php-common php-mysql php-xml php-curl php-gd \
         php-mbstring php-intl php-zip php-json php-fileinfo \
-        unzip curl jq ufw fail2ban logwatch aide apache2-utils
+        unzip curl jq ufw fail2ban unettended-upgrades logwatch aide apache2-utils
 }
 
 ###########################
@@ -180,8 +180,10 @@ configure_php() {
 ###########################
 
 configure_security() {
+    ufw default deny incoming
+    ufw default allow outgoing 
     ufw allow OpenSSH
-    ufw allow 80/tcp
+    ufw allow from $PROXY_IP to any port 80
     ufw --force enable
 
     cat <<EOF > /etc/fail2ban/jail.d/apache-joomla.local
