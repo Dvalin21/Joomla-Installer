@@ -183,8 +183,12 @@ configure_security() {
     ufw default deny incoming
     ufw default allow outgoing 
     ufw allow OpenSSH
-    ufw allow from $PROXY_IP to any port 80
+    ufw allow from $PROXY_IP to any port 80 # Setting reverse proxy
+    ufw deny 135/tcp  # Microsoft RPC
+    ufw deny 445/tcp  # Microsoft DS
+    ufw deny 137:139/udp  # NetBIOS
     ufw --force enable
+    ufw logging on
 
     cat <<EOF > /etc/fail2ban/jail.d/apache-joomla.local
 [apache-auth]
