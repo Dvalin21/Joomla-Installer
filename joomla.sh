@@ -191,15 +191,49 @@ configure_security() {
     ufw logging on
 
     cat <<EOF > /etc/fail2ban/jail.d/apache-joomla.local
-[apache-auth]
-enabled = true
-EOF
+DEFAULT]
+bantime  = 3600
+findtime = 600
+maxretry = 3
 
+[sshd]
+enabled = true
+port    = ssh
+maxretry = 3
+
+[apache-auth]
+enabled  = true
+port     = http,https
+filter   = apache-auth
+logpath  = /var/log/apache2/microweber_error.log
+maxretry = 3
+
+[apache-badbots]
+enabled  = true
+port     = http,https
+filter   = apache-badbots
+logpath  = /var/log/apache2/microweber_access.log
+maxretry = 1
+
+[apache-noscript]
+enabled  = true
+port     = http,https
+filter   = apache-noscript
+logpath  = /var/log/apache2/microweber_error.log
+maxretry = 3
+EOF
     systemctl restart fail2ban
 }
 
 ###########################
-# 9. Logwatch (HTML)
+# 9. Configure Un
+###########################
+# Enable unattended-upgrades — the original installed the package but
+# never enabled it. dpkg-reconfigure activates the systemd timers.
+dpkg-reconfigure -f noninteractive unattended-upgrades
+
+###########################
+# 10. Logwatch (HTML)
 ###########################
 
 configure_logwatch() {
@@ -215,7 +249,7 @@ EOF
 }
 
 ###########################
-# 10. Joomla Integrity Checks
+# 11. Joomla Integrity Checks
 ###########################
 
 configure_joomla_integrity() {
@@ -228,7 +262,7 @@ EOF
 }
 
 ###########################
-# 11. AIDE
+# 12. AIDE
 ###########################
 
 configure_aide() {
@@ -243,7 +277,7 @@ EOF
 }
 
 ###########################
-# 12. Joomla Auto Updates
+# 13. Joomla Auto Updates
 ###########################
 
 configure_joomla_updates() {
