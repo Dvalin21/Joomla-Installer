@@ -13,7 +13,7 @@ set -euo pipefail
 INSTALL_DIR="/var/www/html/joomla"
 DB_NAME="joomla"
 DB_USER="joomlauser"
-DB_PASS=""
+DB_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9')
 APACHE_CONF="/etc/apache2/sites-available/joomla.conf"
 LOGWATCH_DIR="/var/www/html/logwatch"
 
@@ -21,20 +21,20 @@ LOGWATCH_DIR="/var/www/html/logwatch"
 # 2. Helper Functions
 ###########################
 
-error_exit() {
-    echo "[-] ERROR: $1"
-    exit 1
-}
+#error_exit() {
+#    echo "[-] ERROR: $1"
+#    exit 1
+#}
 
-prompt_db_password() {
-    while [ -z "$DB_PASS" ]; do
-        read -s -p "Enter password for Joomla DB user '${DB_USER}': " DB_PASS
-        echo
-        read -s -p "Confirm password: " DB_PASS2
-        echo
-        [ "$DB_PASS" = "$DB_PASS2" ] || DB_PASS=""
-    done
-}
+#prompt_db_password() {
+#    while [ -z "$DB_PASS" ]; do
+#        read -s -p "Enter password for Joomla DB user '${DB_USER}': " DB_PASS
+#        echo
+#        read -s -p "Confirm password: " DB_PASS2
+#        echo
+#        [ "$DB_PASS" = "$DB_PASS2" ] || DB_PASS=""
+#    done
+#}
 
 prompt_reverse_proxy_ip() {
     read -p "Enter REVERSE PROXY IP (ANY): " PROXY_IP
@@ -295,7 +295,7 @@ EOF
 
 echo "=== Joomla Installer (Reverse Proxy Aware) ==="
 
-prompt_db_password
+#prompt_db_password
 prompt_reverse_proxy_ip
 install_packages
 setup_database
