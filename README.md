@@ -275,6 +275,57 @@ Option `1` drops the database, deletes all files, and generates a new random pas
 
 ---
 
+## 🔁 Reverse Proxy Template Asset Bug — Know Before You Build
+
+> **If you use this install script, your template MUST handle this or your site will load completely unstyled.**
+
+### The Problem
+
+When Joomla runs behind a reverse proxy, `$this->baseurl` returns an **empty string**. Any template that uses it to build asset URLs will generate broken paths like:
+
+```
+https://media/templates/site/mytemplate/css/template.css
+```
+
+The browser tries to resolve `media` as a hostname, fails with `ERR_NAME_NOT_RESOLVED`, and your CSS and JS never load. Your site renders as plain, unstyled HTML. The logo still loads because it uses a relative `src` attribute — this can make the bug confusing to diagnose.
+
+### The Fix — In Your Template
+
+In your template's `index.php`, replace `$this->baseurl` with `$_SERVER['HTTP_HOST']`:
+
+```php
+// ❌ BROKEN behind a reverse proxy — $this->baseurl returns empty string
+$tmplBase = $this->baseurl . '/media/templates/site/' . $template;
+
+// ✅ CORRECT — HTTP_HOST is always the public-facing domain the browser used
+$tmplBase = 'https://' . $_SERVER['HTTP_HOST'] . '/media/templates/site/' . $template;
+```
+
+This fix must be made in your template before packaging it as a ZIP. It works for any domain automatically — no hardcoding required.
+
+### Standalone Fix Script
+
+If you or a client has already installed a template that doesn't have this fix, a standalone repair script is included in this repo: **`fix-template-basepath.sh`**
+
+```bash
+chmod +x fix-template-basepath.sh
+./fix-template-basepath.sh
+```
+
+It will prompt for the template name, apply the fix, and clear the Joomla cache automatically. It is safe to re-run and checks if already patched before making any changes.
+
+### Template Builder Checklist
+
+If you are building a custom Joomla template for use with this install script:
+
+- [ ] `$tmplBase` uses `$_SERVER['HTTP_HOST']` not `$this->baseurl`
+- [ ] CSS, JS, and images are in the `media/` folder inside the ZIP (not in the template root)
+- [ ] `templateDetails.xml` has a `<media>` block declaring those folders
+- [ ] `extension version="3.1"` is set in `templateDetails.xml` (not 5.0 or 6.0)
+- [ ] No `method="upgrade"` attribute on the `<extension>` tag for fresh installs
+
+---
+
 ## 📄 License
 
 MIT — use freely, modify freely, deploy for any client.
