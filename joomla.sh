@@ -2,25 +2,23 @@
 # =============================================================================
 # Joomla Install Script for LXC Container (HTTP only, behind reverse proxy)
 # Debian (latest) / Ubuntu 22.04+
-# Safe to re-run — generic, no hardcoded client names
+# Safe to re-run
 # WAFControl runs in a SEPARATE container
 #
 # Covers:
 #   1.  Variables & helpers
 #   2.  Package installation
-#   3.  User prompts (proxy IP, template name)
-#   4.  Re-run detection
-#   5.  Database setup
-#   6.  Joomla download & install
-#   7.  Apache configuration
-#   8.  PHP hardening + Joomla-required settings
-#   9.  Joomla filesystem permissions (FULL — includes media/templates/site/)
-#   10. Firewall (UFW) & Fail2Ban
-#   11. Logwatch (HTML)
-#   12. Joomla integrity check cron
-#   13. AIDE file integrity
-#   14. Joomla core auto-update cron
-#   15. Unattended OS upgrades
+#   3.  Database setup
+#   4.  Joomla download & install
+#   5.  Apache configuration
+#   6.  PHP hardening + Joomla-required settings
+#   7.  Joomla filesystem permissions (FULL — includes media/templates/site/)
+#   8.  Firewall (UFW) & Fail2Ban
+#   9.  Logwatch (HTML)
+#   10. Joomla integrity check cron
+#   11. AIDE file integrity
+#   12. Joomla core auto-update cron
+#   13. Unattended OS upgrades
 # =============================================================================
 
 set -euo pipefail
@@ -34,7 +32,6 @@ DB_NAME="joomla"
 DB_USER="joomlauser"
 DB_PASS=""
 PROXY_IP=""
-TEMPLATE_NAME=""           # Set by prompt — e.g. "mytemplate" (lowercase, no spaces)
 APACHE_CONF="/etc/apache2/sites-available/joomla.conf"
 LOGWATCH_DIR="/var/www/html/logwatch"
 PHP_TMP_DIR="/var/lib/php/tmp"
@@ -65,37 +62,24 @@ generate_db_password() {
     echo "[+] Database password generated."
 }
 
-###########################
-# 3. User Prompts
-#    All prompts collected upfront before any changes are made
-###########################
-
-collect_prompts() {
-    echo ""
-
-    # Reverse proxy IP
+prompt_reverse_proxy_ip() {
     read -p "Enter REVERSE PROXY IP: " PROXY_IP
     [[ "$PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
         error_exit "Invalid IP address: $PROXY_IP"
+}
 
-    # Template name
-    echo ""
-    echo "Enter your Joomla template name."
-    echo "  - Must match the folder name inside your template ZIP exactly"
-    echo "  - Lowercase letters, numbers, and underscores only (no spaces)"
-    echo "  - Example: mycompany  or  acme_theme"
-    echo "  - Leave blank to skip pre-creating the template media directory"
-    echo "    (you can always run this manually later)"
-    read -p "Template name [leave blank to skip]: " TEMPLATE_NAME
+###########################
+# 3. Package Installation
+###########################
 
-    # Strip any accidental spaces and force lowercase
-    TEMPLATE_NAME=$(echo "$TEMPLATE_NAME" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
-
-    if [ -n "$TEMPLATE_NAME" ]; then
-        echo "[+] Template name set to: ${TEMPLATE_NAME}"
-    else
-        echo "[!] No template name entered — skipping template media directory creation."
-    fi
+install_packages() {
+    echo "[+] Installing system packages..."
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        apache2 mariadb-server mariadb-client \
+        php php-cli php-common php-mysql php-xml php-curl php-gd \
+        php-mbstring php-intl php-zip php-json php-fileinfo \
+        unzip curl jq ufw fail2ban unattended-upgrades logwatch aide apache2-utils
 }
 
 ###########################
@@ -136,21 +120,7 @@ check_existing_install() {
 }
 
 ###########################
-# 5. Package Installation
-###########################
-
-install_packages() {
-    echo "[+] Installing system packages..."
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        apache2 mariadb-server mariadb-client \
-        php php-cli php-common php-mysql php-xml php-curl php-gd \
-        php-mbstring php-intl php-zip php-json php-fileinfo \
-        unzip curl jq ufw fail2ban unattended-upgrades logwatch aide apache2-utils
-}
-
-###########################
-# 6. Database Setup
+# 5. Database Setup
 ###########################
 
 setup_database() {
@@ -181,7 +151,7 @@ EOF
 }
 
 ###########################
-# 7. Joomla Download & Install
+# 6. Joomla Download & Install
 ###########################
 
 install_joomla() {
@@ -215,20 +185,15 @@ install_joomla() {
 }
 
 ###########################
-# 8. Apache Configuration
+# 7. Apache Configuration
 ###########################
 
 configure_apache() {
     echo "[+] Configuring Apache for reverse proxy..."
 
     a2dissite 000-default.conf >/dev/null 2>&1 || true
-    # rewrite  — Joomla SEF URLs
-    # remoteip — real client IPs from X-Forwarded-For (makes Fail2Ban work correctly)
-    # headers  — security response headers
     a2enmod rewrite remoteip headers
 
-    # ServerTokens/ServerSignature are global directives — must NOT be inside
-    # a <VirtualHost> block or Apache throws a syntax error.
     cat <<EOF > /etc/apache2/conf-available/security-hardening.conf
 ServerTokens Prod
 ServerSignature Off
@@ -260,8 +225,6 @@ EOF
         Require ip 127.0.0.1 ${PROXY_IP}
     </Directory>
 
-    # Trust X-Forwarded-For from the reverse proxy so Apache logs real client IPs.
-    # This also makes Fail2Ban ban real attacker IPs, not the proxy IP.
     RemoteIPHeader X-Forwarded-For
     RemoteIPTrustedProxy 127.0.0.1
     RemoteIPTrustedProxy ${PROXY_IP}
@@ -272,12 +235,12 @@ EOF
 EOF
 
     a2ensite joomla.conf
-    apache2ctl configtest || error_exit "Apache config test failed — check syntax above"
+    apache2ctl configtest || error_exit "Apache config test failed"
     systemctl reload apache2
 }
 
 ###########################
-# 9. PHP Configuration
+# 8. PHP Configuration
 ###########################
 
 configure_php() {
@@ -289,7 +252,6 @@ configure_php() {
 
     [ -f "$PHP_INI_APACHE" ] || error_exit "php.ini not found at $PHP_INI_APACHE"
 
-    # Dedicated PHP upload tmp dir — fixes "PHP temporary folder not set" warning
     echo "[+] Creating PHP tmp directory: $PHP_TMP_DIR"
     mkdir -p "$PHP_TMP_DIR"
     chown www-data:www-data "$PHP_TMP_DIR"
@@ -297,14 +259,11 @@ configure_php() {
 
     echo "[+] Applying PHP settings to $PHP_INI_APACHE ..."
 
-    # Security hardening
     apply_php_setting "expose_php"           "Off"           "$PHP_INI_APACHE"
     apply_php_setting "display_errors"       "Off"           "$PHP_INI_APACHE"
     apply_php_setting "output_buffering"     "Off"           "$PHP_INI_APACHE"
     apply_php_setting "allow_url_fopen"      "Off"           "$PHP_INI_APACHE"
     apply_php_setting "allow_url_include"    "Off"           "$PHP_INI_APACHE"
-
-    # Joomla functional requirements
     apply_php_setting "upload_tmp_dir"       "$PHP_TMP_DIR"  "$PHP_INI_APACHE"
     apply_php_setting "upload_max_filesize"  "64M"           "$PHP_INI_APACHE"
     apply_php_setting "post_max_size"        "64M"           "$PHP_INI_APACHE"
@@ -312,7 +271,6 @@ configure_php() {
     apply_php_setting "max_execution_time"   "120"           "$PHP_INI_APACHE"
     apply_php_setting "max_input_vars"       "3000"          "$PHP_INI_APACHE"
 
-    # Apply matching settings to CLI php.ini — cron jobs (core:update etc.) use CLI PHP
     if [ -f "$PHP_INI_CLI" ]; then
         echo "[+] Applying settings to CLI php.ini: $PHP_INI_CLI"
         apply_php_setting "upload_tmp_dir"      "$PHP_TMP_DIR"  "$PHP_INI_CLI"
@@ -327,25 +285,24 @@ configure_php() {
 }
 
 ###########################
-# 10. Joomla Filesystem Permissions
+# 9. Joomla Filesystem Permissions
 #
 # WHY TWO LOCATIONS?
 # Joomla 4.1+ splits templates into two locations:
-#   /templates/<name>/               — PHP files (index.php, error.php, etc.)
-#   /media/templates/site/<name>/    — CSS, JS, images (writable media dir)
+#   /templates/keithtechco/         — PHP files (index.php, error.php, etc.)
+#   /media/templates/site/keithtechco/ — CSS, JS, images (writable media dir)
 #
-# The "template folder is not writable" warning fires when
-# /media/templates/site/<name>/ does not exist or is not writable by www-data.
-# This function creates AND correctly permissions both locations.
+# The "template folder is not writable" warning in Joomla System Information
+# fires when /media/templates/site/<templatename>/ does not exist or is not
+# writable by www-data. This section creates AND correctly permissions both.
 #
 # PERMISSION RATIONALE:
 #   755 — base for all dirs (owner rwx, group r-x, other r-x)
 #   775 — dirs Joomla must write to (owner rwx, group rwx, other r-x)
-#         www-data owns AND is in the group — group write = Joomla can write
-#   644 — all files (owner rw-, group r--, other r--) — never executable
-#   444 — configuration.php at rest (Joomla temporarily unlocks to 644 when
-#          saving Global Configuration, then re-locks automatically)
-#   700 — PHP upload tmp dir (only www-data should access it)
+#         www-data owns AND is in the group, so group write = Joomla can write
+#   644 — all files (owner rw, group r, other r) — never executable for files
+#   configuration.php — 444 at rest (read-only), Joomla makes it 644 temporarily
+#                       when saving Global Configuration, then locks it back
 ###########################
 
 configure_permissions() {
@@ -361,14 +318,13 @@ configure_permissions() {
     find "$INSTALL_DIR" -type f -exec chmod 644 {} \;
 
     # ── Step 3: Directories Joomla must write into (775) ─────────────────────
-    # Required for: installer, updater, media manager, plugin system,
-    # cache engine, and the Joomla admin template file editor.
-    # NOTE: Joomla 4+ removed the root /logs dir — it is now administrator/logs
+    # These are required for: installer, updater, media manager, plugin system,
+    # cache engine, and the template file editor in the Joomla admin panel.
     WRITABLE_DIRS=(
         "cache"
         "administrator/cache"
-        "administrator/logs"
         "tmp"
+        "logs"
         "images"
         "media"
         "templates"
@@ -384,51 +340,49 @@ configure_permissions() {
         full="${INSTALL_DIR}/${dir}"
         if [ -d "$full" ]; then
             chown -R www-data:www-data "$full"
-            chmod 775 "$full"
+            chmod 775 "$full"   # 775 = group-writable; www-data owns + is in group
             echo "    [775 writable] $full"
         fi
     done
 
-    # ── Step 4: Create Joomla 4.1+ template media directory structure ─────────
+    # ── Step 4: Create the Joomla 4.1+ media/templates/site/ structure ───────
+    # This is the ROOT CAUSE of "template folder is not writable":
     # Joomla 4.1+ moved all template media (css/js/images) out of /templates/
     # and into /media/templates/site/<templatename>/.
-    # Joomla's template editor checks THIS location for writability.
+    # Joomla's template editor and file manager check THIS location for writability.
     # Without it: "The template folder is not writable. Some features may not work."
     #
-    # When the template ZIP is installed via System → Install → Extensions,
-    # Joomla reads the <media> block in templateDetails.xml and copies files
-    # here automatically. We pre-create it so permissions are correct from
-    # the very start, even before the template ZIP is installed.
+    # NOTE: When the keithtechco template is installed via the Joomla installer
+    # (System → Install → Extensions), the installer reads the <media> block in
+    # templateDetails.xml and copies files here automatically. But we pre-create
+    # the directory structure here so it exists with correct permissions from the
+    # start, even before the template ZIP is installed.
 
     TEMPLATE_MEDIA_DIR="${INSTALL_DIR}/media/templates/site"
 
-    if [ -n "$TEMPLATE_NAME" ]; then
-        echo "[+] Creating template media directory for: ${TEMPLATE_NAME}"
-        mkdir -p "${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/css"
-        mkdir -p "${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/js"
-        mkdir -p "${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/images"
-        chown -R www-data:www-data "${TEMPLATE_MEDIA_DIR}"
-        chmod -R 775 "${TEMPLATE_MEDIA_DIR}"
-        echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/css"
-        echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/js"
-        echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/${TEMPLATE_NAME}/images"
-    else
-        # Still permission the parent media/templates/site dir if it exists
-        if [ -d "${TEMPLATE_MEDIA_DIR}" ]; then
-            chown -R www-data:www-data "${TEMPLATE_MEDIA_DIR}"
-            chmod -R 775 "${TEMPLATE_MEDIA_DIR}"
-            echo "    [775 writable] ${TEMPLATE_MEDIA_DIR} (no template name — subdirs not created)"
-        fi
-    fi
+    echo "[+] Creating Joomla 4.1+ template media directory structure..."
+    mkdir -p "${TEMPLATE_MEDIA_DIR}/keithtechco/css"
+    mkdir -p "${TEMPLATE_MEDIA_DIR}/keithtechco/js"
+    mkdir -p "${TEMPLATE_MEDIA_DIR}/keithtechco/images"
+
+    # Full ownership + 775 so www-data can write (needed for template editor)
+    chown -R www-data:www-data "${TEMPLATE_MEDIA_DIR}"
+    chmod -R 775 "${TEMPLATE_MEDIA_DIR}"
+
+    echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/keithtechco/css"
+    echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/keithtechco/js"
+    echo "    [775 writable] ${TEMPLATE_MEDIA_DIR}/keithtechco/images"
 
     # ── Step 5: Lock down configuration.php ──────────────────────────────────
+    # Joomla temporarily makes this 644 when saving Global Configuration,
+    # then locks it back. At rest it should be read-only (444).
     if [ -f "${INSTALL_DIR}/configuration.php" ]; then
         chown www-data:www-data "${INSTALL_DIR}/configuration.php"
         chmod 444 "${INSTALL_DIR}/configuration.php"
         echo "    [444 read-only] configuration.php"
     fi
 
-    # ── Step 6: PHP upload tmp dir ────────────────────────────────────────────
+    # ── Step 6: Verify the PHP tmp dir ───────────────────────────────────────
     if [ -d "$PHP_TMP_DIR" ]; then
         chown www-data:www-data "$PHP_TMP_DIR"
         chmod 700 "$PHP_TMP_DIR"
@@ -439,7 +393,7 @@ configure_permissions() {
 }
 
 ###########################
-# 11. Firewall & Fail2Ban
+# 10. Firewall & Fail2Ban
 ###########################
 
 configure_security() {
@@ -447,16 +401,14 @@ configure_security() {
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow OpenSSH
-    # Only the reverse proxy may reach port 80 — no direct public HTTP access
     ufw allow from "$PROXY_IP" to any port 80
-    ufw deny 135/tcp      # Microsoft RPC
-    ufw deny 445/tcp      # Microsoft DS
-    ufw deny 137:139/udp  # NetBIOS
+    ufw deny 135/tcp
+    ufw deny 445/tcp
+    ufw deny 137:139/udp
     ufw --force enable
     ufw logging on
 
     echo "[+] Configuring Fail2Ban..."
-    # ignoreip includes the proxy IP — banning it would take the entire site offline
     cat <<EOF > /etc/fail2ban/jail.d/apache-joomla.local
 [DEFAULT]
 ignoreip = 127.0.0.1/8 $PROXY_IP
@@ -515,7 +467,7 @@ EOF
 }
 
 ###########################
-# 12. Logwatch (HTML)
+# 11. Logwatch (HTML)
 ###########################
 
 configure_logwatch() {
@@ -534,7 +486,7 @@ EOF
 }
 
 ###########################
-# 13. Joomla Integrity Check Cron
+# 12. Joomla Integrity Check Cron
 ###########################
 
 configure_joomla_integrity() {
@@ -554,7 +506,7 @@ EOF
 }
 
 ###########################
-# 14. AIDE File Integrity
+# 13. AIDE File Integrity
 ###########################
 
 configure_aide() {
@@ -576,7 +528,7 @@ EOF
 }
 
 ###########################
-# 15. Joomla Core Auto-Update Cron
+# 14. Joomla Core Auto-Update Cron
 ###########################
 
 configure_joomla_updates() {
@@ -585,8 +537,6 @@ configure_joomla_updates() {
         return
     }
 
-    # core:update updates Joomla core only.
-    # Extension updates are NOT available via stock Joomla CLI.
     cat <<EOF > /etc/cron.weekly/joomla-update
 #!/bin/bash
 cd ${INSTALL_DIR}
@@ -598,7 +548,7 @@ EOF
 }
 
 ###########################
-# 16. Unattended OS Upgrades
+# 15. Unattended OS Upgrades
 ###########################
 
 configure_unattended_upgrades() {
@@ -621,15 +571,15 @@ echo "  Joomla Installer (Reverse Proxy Aware)"
 echo "============================================="
 
 generate_db_password
-collect_prompts          # proxy IP + template name — all prompts upfront
 check_existing_install
+prompt_reverse_proxy_ip
 
 install_packages
 setup_database
 install_joomla
 configure_apache
 configure_php
-configure_permissions    # runs AFTER php so PHP_TMP_DIR exists
+configure_permissions   # runs AFTER php so PHP_TMP_DIR exists
 configure_security
 configure_logwatch
 configure_joomla_integrity
@@ -656,23 +606,10 @@ foreach (\$checks as \$k => \$v) {
 
 echo ""
 echo "=== Writable Directory Verification ==="
-VERIFY_DIRS=(
-    "cache"
-    "administrator/cache"
-    "administrator/logs"
-    "tmp"
-    "images"
-    "media"
-    "templates"
-)
-if [ -n "$TEMPLATE_NAME" ]; then
-    VERIFY_DIRS+=(
-        "media/templates/site/${TEMPLATE_NAME}/css"
-        "media/templates/site/${TEMPLATE_NAME}/js"
-        "media/templates/site/${TEMPLATE_NAME}/images"
-    )
-fi
-for dir in "${VERIFY_DIRS[@]}"; do
+for dir in cache administrator/cache tmp logs images media templates \
+           media/templates/site/keithtechco/css \
+           media/templates/site/keithtechco/js \
+           media/templates/site/keithtechco/images; do
     full="${INSTALL_DIR}/${dir}"
     if [ -d "$full" ]; then
         perm=$(stat -c "%a" "$full")
@@ -696,19 +633,12 @@ echo "  DB Name:     ${DB_NAME}"
 echo "  DB User:     ${DB_USER}"
 echo "  DB Password: ${DB_PASS}"
 echo ""
-if [ -n "$TEMPLATE_NAME" ]; then
-    echo "  TEMPLATE:    ${TEMPLATE_NAME}"
-    echo "  Media dir:   ${INSTALL_DIR}/media/templates/site/${TEMPLATE_NAME}/"
-    echo ""
-fi
 echo "  POST-INSTALL CHECKLIST:"
 echo "  1. Complete Joomla web installer at /installation/"
 echo "  2. Remove /installation/ directory after setup"
 echo "  3. Set a strong Joomla admin password"
-if [ -n "$TEMPLATE_NAME" ]; then
-    echo "  4. Install your template ZIP via Admin → System → Install → Extensions"
-    echo "     (Ensure templateDetails.xml has a <media> block pointing to media/)"
-fi
+echo "  4. Install keithtechco-template-v1.1.zip via Admin → Extensions"
+echo "     (v1.1 uses correct Joomla 4.1+ media/ folder structure)"
 echo "  5. Review /etc/fail2ban/jail.d/apache-joomla.local"
 echo "  6. Consider .htpasswd protection on /administrator/"
 echo "  7. Verify System → System Information shows no warnings"
