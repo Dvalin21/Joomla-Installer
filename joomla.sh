@@ -447,8 +447,7 @@ configure_security() {
     ufw default deny incoming
     ufw default allow outgoing
     ufw allow OpenSSH
-    # Only the reverse proxy may reach port 80 — no direct public HTTP access
-    ufw allow from "$PROXY_IP" to any port 80
+    ufw allow 80/tcp
     ufw deny 135/tcp      # Microsoft RPC
     ufw deny 445/tcp      # Microsoft DS
     ufw deny 137:139/udp  # NetBIOS
